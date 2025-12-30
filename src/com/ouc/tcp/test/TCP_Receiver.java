@@ -31,6 +31,7 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 			tcpH.setTh_ack(recvPack.getTcpH().getTh_seq());
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+			ackPack.setTcpH(tcpH);
 			//回复ACK报文段
 			reply(ackPack);			
 			
@@ -41,10 +42,15 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 			System.out.println("Recieve Computed: "+CheckSum.computeChkSum(recvPack));
 			System.out.println("Recieved Packet"+recvPack.getTcpH().getTh_sum());
 			System.out.println("Problem: Packet Number: "+recvPack.getTcpH().getTh_seq()+" + InnerSeq:  "+sequence);
+			System.out.println("Corrupted packet, send NACK.");
+			
+			// 生成NACK报文段
 			tcpH.setTh_ack(-1);
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
-			//回复ACK报文段
+			ackPack.setTcpH(tcpH);
+			
+			// 回复NACK报文段
 			reply(ackPack);
 		}
 		
