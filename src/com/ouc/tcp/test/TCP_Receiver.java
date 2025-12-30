@@ -14,8 +14,9 @@ import com.ouc.tcp.tool.TCP_TOOL;
 public class TCP_Receiver extends TCP_Receiver_ADT {
 	
 	private TCP_PACKET ackPack;	//回复的ACK报文段
+	int lastAckNum = 0; // rdt2.2: 用于记录上一个正确接收并回复的确认号，初始化为0
 	int sequence=1;//用于记录当前待接收的包序号，注意包序号不完全是
-		
+
 	/*构造函数*/
 	public TCP_Receiver() {
 		super();	//调用超类构造函数
@@ -28,13 +29,17 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 		//检查校验码，生成ACK
 		if(CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
 			//生成ACK报文段（设置确认号）
-			tcpH.setTh_ack(recvPack.getTcpH().getTh_seq());
+			int currentSeq = recvPack.getTcpH().getTh_seq();
+			tcpH.setTh_ack(currentSeq);
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
 			ackPack.setTcpH(tcpH);
 			//回复ACK报文段
 			reply(ackPack);			
 			
+			// 更新最后一次成功的ACK
+			lastAckNum = currentSeq;
+
 			//将接收到的正确有序的数据插入data队列，准备交付
 			dataQueue.add(recvPack.getTcpS().getData());				
 			sequence++;
@@ -42,15 +47,13 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 			System.out.println("Recieve Computed: "+CheckSum.computeChkSum(recvPack));
 			System.out.println("Recieved Packet"+recvPack.getTcpH().getTh_sum());
 			System.out.println("Problem: Packet Number: "+recvPack.getTcpH().getTh_seq()+" + InnerSeq:  "+sequence);
-			System.out.println("Corrupted packet, send NACK.");
+			System.out.println("Corrupted packet, send redundant ACK.");
 			
-			// 生成NACK报文段
-			tcpH.setTh_ack(-1);
+			// rdt2.2: 如果包损坏，发送上一个正确接收包的ACK
+			tcpH.setTh_ack(lastAckNum);
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
 			ackPack.setTcpH(tcpH);
-			
-			// 回复NACK报文段
 			reply(ackPack);
 		}
 		

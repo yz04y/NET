@@ -65,6 +65,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 				//break;
 			}else{
 				System.out.println("Wait ACK: "+tcpPack.getTcpH().getTh_seq() + ", but receive: " + currentAck);
+				// rdt2.2: 如果收到的确认号不是当前发送包的序号（包括冗余ACK），则重传
 				udt_send(tcpPack);
 				flag = 0;
 			}
@@ -72,7 +73,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	}
 
 	@Override
-	//接收到ACK报文：检查校验和，将确认号插入ack队列;NACK的确认号为－1；不需要修改
+	//接收到ACK报文：检查校验和，将确认号插入ack队列;不需要修改
 	public void recv(TCP_PACKET recvPack) {
 		if (CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
 			System.out.println("Receive ACK Number： "+ recvPack.getTcpH().getTh_ack());
@@ -83,6 +84,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 			waitACK();
 		} else {
 			System.out.println("Receive Corrupted ACK, retransmit.");
+			// rdt2.2: 如果ACK损坏，重传当前包
 			udt_send(tcpPack);
 		}
 	}
