@@ -27,21 +27,27 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	public void rdt_send(int dataIndex, int[] appData) {
 		
 		//生成TCP数据报（设置序号和数据字段/校验和),注意打包的顺序
-		tcpH.setTh_seq(dataIndex * appData.length + 1);//包序号设置为字节流号：
-		tcpS.setData(appData);
-		tcpPack = new TCP_PACKET(tcpH, tcpS, destinAddr);		
+		TCP_HEADER header = new TCP_HEADER();
+		header.setTh_seq(dataIndex * appData.length + 1);
+		TCP_SEGMENT segment = new TCP_SEGMENT();
+		segment.setData(appData);
+		tcpPack = new TCP_PACKET(header, segment, destinAddr);		
 		//更新带有checksum的TCP 报文头		
-		tcpH.setTh_sum(CheckSum.computeChkSum(tcpPack));
-		tcpPack.setTcpH(tcpH);
+		header.setTh_sum(CheckSum.computeChkSum(tcpPack));
+		
+		// 发送前先取消旧定时器，防止干扰
+		if (timer != null) {
+			timer.cancel();
+		}
 		
 		//发送TCP数据报
 		udt_send(tcpPack);
 		flag = 0;
 
-		// rdt3.0: 启动定时器
+		// rdt3.0: 启动定时器（每隔1秒重传直到收到ACK）
 		timer = new UDT_Timer();
 		task = new UDT_RetransTask(client, tcpPack);
-		timer.schedule(task, 3000, 3000);
+		timer.schedule(task, 1000, 1000);
 		
 		//等待ACK报文
 		waitACK();
@@ -52,8 +58,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	//不可靠发送：将打包好的TCP数据报通过不可靠传输信道发送；仅需修改错误标志
 	public void udt_send(TCP_PACKET stcpPack) {
 		//设置错误控制标志
-		tcpH.setTh_eflag((byte)2);
-		//System.out.println("to send: "+stcpPack.getTcpH().getTh_seq());				
+		stcpPack.getTcpH().setTh_eflag((byte)4);
 		//发送数据报
 		client.send(stcpPack);
 	}
@@ -63,7 +68,14 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	public void waitACK() {
 		//循环检查ackQueue
 		//循环检查确认号对列中是否有新收到的ACK		
-		while (flag == 0); // 阻塞等待，直到recv收到正确的ACK并设置flag为1
+		while (flag == 0) {
+			try {
+				Thread.sleep(10); // 添加短暂休眠，避免忙等待占用CPU资源
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				break;
+			}
+		}
 	}
 
 	@Override
@@ -73,17 +85,19 @@ public class TCP_Sender extends TCP_Sender_ADT {
 			int currentAck = recvPack.getTcpH().getTh_ack();
 			System.out.println("Receive ACK Number： "+ currentAck);
 			
-			if (currentAck == tcpPack.getTcpH().getTh_seq()) {
+			if (tcpPack != null && currentAck == tcpPack.getTcpH().getTh_seq()) {
 				// 收到正确且期待的ACK
 				System.out.println("Clear: " + tcpPack.getTcpH().getTh_seq());
 				// rdt3.0: 停止定时器
-				timer.cancel();
+				if (timer != null) timer.cancel();
 				flag = 1;
 			} else {
-				// 收到冗余ACK
-				System.out.println("Receive Redundant ACK: " + currentAck + ", but expect: " + tcpPack.getTcpH().getTh_seq());
-				// rdt3.0: 快速重传
-				udt_send(tcpPack);
+				// 收到冗余ACK或不匹配的序号
+				if (tcpPack != null) {
+					System.out.println("Receive Unmatched ACK: " + currentAck + ", but expect: " + tcpPack.getTcpH().getTh_seq());
+					// rdt3.0: 冗余ACK通常依赖超时，但也可以选择快速重传提高效率
+					//udt_send(tcpPack);
+				}
 			}
 		} else {
 			System.out.println("Receive Corrupted ACK.");

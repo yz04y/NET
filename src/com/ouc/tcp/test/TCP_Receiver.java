@@ -28,21 +28,32 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 	public void rdt_recv(TCP_PACKET recvPack) {
 		//检查校验码，生成ACK
 		if(CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
-			//生成ACK报文段（设置确认号）
 			int currentSeq = recvPack.getTcpH().getTh_seq();
-			tcpH.setTh_ack(currentSeq);
-			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
-			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
-			ackPack.setTcpH(tcpH);
-			//回复ACK报文段
-			reply(ackPack);			
-			
-			// 更新最后一次成功的ACK
-			lastAckNum = currentSeq;
+			// 检查是否是期待的序号
+			if (currentSeq > lastAckNum) {
+				// 按序到达且是新包
+				tcpH.setTh_ack(currentSeq);
+				ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
+				tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+				ackPack.setTcpH(tcpH);
+				//回复ACK报文段
+				reply(ackPack);			
+				
+				// 更新最后一次成功的ACK
+				lastAckNum = currentSeq;
 
-			//将接收到的正确有序的数据插入data队列，准备交付
-			dataQueue.add(recvPack.getTcpS().getData());				
-			sequence++;
+				//将接收到的正确有序的数据插入data队列，准备交付
+				dataQueue.add(recvPack.getTcpS().getData());				
+				sequence++;
+			} else {
+				// 收到重复的包
+				System.out.println("Receive duplicate packet: " + currentSeq);
+				tcpH.setTh_ack(lastAckNum);
+				ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
+				tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+				ackPack.setTcpH(tcpH);
+				reply(ackPack);
+			}
 		}else{
 			System.out.println("Recieve Computed: "+CheckSum.computeChkSum(recvPack));
 			System.out.println("Recieved Packet"+recvPack.getTcpH().getTh_sum());
@@ -97,7 +108,7 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 	//回复ACK报文段
 	public void reply(TCP_PACKET replyPack) {
 		//设置错误控制标志
-		tcpH.setTh_eflag((byte)0);	//eFlag=0，信道无错误
+		replyPack.getTcpH().setTh_eflag((byte)4);	//eFlag=0，信道无错误
 				
 		//发送数据报
 		client.send(replyPack);
