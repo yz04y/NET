@@ -14,8 +14,8 @@ import com.ouc.tcp.tool.TCP_TOOL;
 public class TCP_Receiver extends TCP_Receiver_ADT {
 	
 	private TCP_PACKET ackPack;	//回复的ACK报文段
-	int lastAckNum = 0; // rdt2.2: 用于记录上一个正确接收并回复的确认号，初始化为0
-	int sequence=1;//用于记录当前待接收的包序号，注意包序号不完全是
+	int lastAckNum = 0; // GBN: 用于记录上一个成功接收并回复的确认号
+	int expectedSeqNum = 1; // GBN: 期待接收的下一个包序号
 
 	/*构造函数*/
 	public TCP_Receiver() {
@@ -29,38 +29,39 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 		//检查校验码，生成ACK
 		if(CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
 			int currentSeq = recvPack.getTcpH().getTh_seq();
-			// 检查是否是期待的序号
-			if (currentSeq > lastAckNum) {
-				// 按序到达且是新包
+			
+			// GBN: 只有当收到期待的序号时才处理
+			if (currentSeq == expectedSeqNum) {
+				System.out.println("Receive Expected Packet: " + currentSeq);
+				
+				// 构造累积确认 ACK
 				tcpH.setTh_ack(currentSeq);
 				ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 				tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
 				ackPack.setTcpH(tcpH);
-				//回复ACK报文段
 				reply(ackPack);			
 				
-				// 更新最后一次成功的ACK
+				// 更新状态
 				lastAckNum = currentSeq;
+				expectedSeqNum += recvPack.getTcpS().getData().length;
 
-				//将接收到的正确有序的数据插入data队列，准备交付
+				// 交付数据
 				dataQueue.add(recvPack.getTcpS().getData());				
-				sequence++;
 			} else {
-				// 收到重复的包
-				System.out.println("Receive duplicate packet: " + currentSeq);
+				// 收到失序包（Out-of-order）或重复包
+				System.out.println("Receive Out-of-order/Duplicate Packet: " + currentSeq + ", expect: " + expectedSeqNum);
+				
+				// 重新发送最后一个累积 ACK
 				tcpH.setTh_ack(lastAckNum);
 				ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 				tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
 				ackPack.setTcpH(tcpH);
 				reply(ackPack);
 			}
-		}else{
-			System.out.println("Recieve Computed: "+CheckSum.computeChkSum(recvPack));
-			System.out.println("Recieved Packet"+recvPack.getTcpH().getTh_sum());
-			System.out.println("Problem: Packet Number: "+recvPack.getTcpH().getTh_seq()+" + InnerSeq:  "+sequence);
-			System.out.println("Corrupted packet, send redundant ACK.");
+		} else {
+			System.out.println("Corrupted packet, send redundant ACK for " + lastAckNum);
 			
-			// rdt2.2: 如果包损坏，发送上一个正确接收包的ACK
+			// 包损坏，发送上一个正确接收包的累计 ACK
 			tcpH.setTh_ack(lastAckNum);
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
@@ -70,9 +71,8 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 		
 		System.out.println();
 		
-		
 		//交付数据（每20组数据交付一次）
-		if(dataQueue.size() == 20) 
+		if(dataQueue.size() >= 20) 
 			deliver_data();	
 	}
 
